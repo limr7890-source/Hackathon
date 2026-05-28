@@ -89,8 +89,8 @@ def render_analytics_dashboard():
             st.markdown(
                 f'<div style="background-color: #fee2e2; border-left: 5px solid #ef4444; padding: 12px; border-radius: 6px; margin-bottom: 10px;">'
                 f'<span style="color: #78350f; font-family: Inter, sans-serif; font-weight: 800; font-size: 14px;">'
-                f'🚨 THREAT ALERT: Spam spike detected in {row["Hashtag"]} — Hijack rate: {row["Hijack_Rate"]}% ({row["Misaligned_Posts"]} spam posts)'
-                f'</span></div>', # <-- הפסיק כאן מתקן את שורה 96
+                f" THREAT ALERT: Spam spike detected in {row['Hashtag']} — Hijack rate: {row['Hijack_Rate']}% ({row['Misaligned_Posts']} spam posts)"
+                f'</span></div>', 
                 unsafe_allow_html=True
             )
     
@@ -100,8 +100,8 @@ def render_analytics_dashboard():
             st.markdown(
                 f'<div style="background-color: #fef9c3; border-left: 5px solid #eab308; padding: 12px; border-radius: 6px; margin-bottom: 10px;">'
                 f'<span style="color: #78350f; font-family: Inter, sans-serif; font-weight: 800; font-size: 14px;">'
-                f'⚠️ MODERATE RISK: {row["Hashtag"]} showing elevated hijack activity — {row["Hijack_Rate"]}% ({row["Misaligned_Posts"]} spam posts)'
-                f'</span></div>', # <-- הפסיק כאן מתקן את שורה 107
+                f" MODERATE RISK: {row['Hashtag']} showing elevated hijack activity — {row['Hijack_Rate']}% ({row['Misaligned_Posts']} spam posts)"
+                f'</span></div>', 
                 unsafe_allow_html=True
             )
     
@@ -136,10 +136,14 @@ def render_analytics_dashboard():
         with col_title:
             st.markdown("#### Brand Alignment Distribution")
         with col_help:
-            st.markdown("<span class='custom-help-icon'>❓</span>", 
+            st.markdown("<span class='custom-help-icon'></span>", 
                         unsafe_allow_html=True, 
                         help="Visual breakdown of aligned posts (genuine campaign content) vs hijacked posts (spam/scams)")
         pie_chart = create_compliance_pie_chart(metrics)
+        
+        pie_chart.update_layout(
+            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
+        )
         st.plotly_chart(pie_chart, use_container_width=True)
     
     with chart_col2:
@@ -147,10 +151,15 @@ def render_analytics_dashboard():
         with col_title2:
             st.markdown("#### Engagement Quality Analysis")
         with col_help2:
-            st.markdown("<span class='custom-help-icon'>❓</span>", 
+            st.markdown("<span class='custom-help-icon'></span>", 
                         unsafe_allow_html=True,
                         help="Compares engagement between authentic posts vs spam to detect if hijackers are stealing audience attention")
         engagement_chart = create_engagement_comparison_chart(engagement)
+        
+        engagement_chart.update_layout(
+            xaxis=dict(title=""), 
+            legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5)
+        )
         st.plotly_chart(engagement_chart, use_container_width=True)
     
     # Campaign Integrity Heatmap
@@ -158,7 +167,7 @@ def render_analytics_dashboard():
     with col_title3:
         st.markdown("#### Campaign Integrity Heatmap")
     with col_help3:
-        st.markdown("<span class='custom-help-icon'>❓</span>", 
+        st.markdown("<span class='custom-help-icon'></span>", 
                    unsafe_allow_html=True,
                    help="Real-time threat visualization showing hijack severity per hashtag. Light orange = healthy, medium orange = moderate risk, dark orange = severe hijacking")
     heatmap = create_hashtag_risk_heatmap(hashtag_perf)
@@ -177,14 +186,12 @@ def render_analytics_dashboard():
     st.divider()
     
     # AI-Powered Post Audit Feed
-    # AI-Powered Post Audit Feed
     col_title4, col_help4 = st.columns([20, 1])
     with col_title4:
         st.markdown("### AI-Powered Post Audit Feed")
     with col_help4:
-        # התיקון: שימוש ב-unsafe_allow_html כדי שהתגית תתפרש כאייקון ולא כטקסט שבור
         st.markdown(
-            "<span class='custom-help-icon'>🔮</span>", 
+            "<span class='custom-help-icon'></span>", 
             unsafe_allow_html=True,
             help="Top posts by engagement with AI classification, confidence scores, and spam detection reasons. Shows exactly which posts are hijacking your campaign"
         )
@@ -294,7 +301,7 @@ if __name__ == "__main__":
     </script>
     """, height=0, width=0)
     
-    # Custom CSS for light blue background with orange accents
+    # Custom CSS Blocks
     st.markdown("""
     <style>
     .stApp {
@@ -327,14 +334,24 @@ if __name__ == "__main__":
         background: rgba(255, 255, 255, 0.98);
     }
 
-    /* 💎 STYLING THE HELP QUESTION MARKS ON CARDS TO MATCH DETAILED DARK BROWN */
+    div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
+    div[data-testid="stAlert"] p,
+    div[data-testid="stAlert"] div {
+        color: #78350f !important;
+        font-weight: 800 !important;
+        font-size: 14.5px !important;
+    }
+    
+    div[data-testid="stAlert"] svg {
+        fill: #78350f !important;
+    }
+
     div[data-testid="stMarkdownContainer"] [property="blockquote"] + span, 
     div[data-testid="stMarkdownContainer"] svg {
         color: #78350f !important;
         fill: #78350f !important;
     }
     
-    /* Clean custom icons for custom inline titles */
     .custom-help-icon {
         font-size: 16px !important; 
         font-weight: 900 !important; 
@@ -342,9 +359,23 @@ if __name__ == "__main__":
         cursor: help;
     }
     
-    /* Fix native Streamlit metric help widgets */
     div[data-testid="stMetric"] div div svg {
         fill: #78350f !important;
+    }
+
+    /* כפיית צבע חום קריא על כל מקראות הגרפים */
+    .js-plotly-plot .legendtext {
+        fill: #78350f !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 600 !important;
+    }
+    
+    .js-plotly-plot .gtitle, .js-plotly-plot .xtitle, .js-plotly-plot .ytitle {
+        fill: #78350f !important;
+    }
+
+    .js-plotly-plot .infolayer .g-gtitle {
+        display: none !important;
     }
     </style>
     """, unsafe_allow_html=True)
