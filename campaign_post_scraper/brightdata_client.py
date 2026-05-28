@@ -1,4 +1,4 @@
-"""BrightData client module for executing scrape queries and handling rate limiting."""
+"""BrightData client module for fetching X posts via the Dataset API."""
 
 import csv
 import io
@@ -6,11 +6,17 @@ import time
 
 import httpx
 
+# BrightData Dataset API endpoint
+BRIGHTDATA_SCRAPE_URL = "https://api.brightdata.com/datasets/v3/scrape"
+
+# Dataset ID for X (Twitter) posts
+X_POSTS_DATASET_ID = "gd_lwxkxvnf1cynvib9co"
+
 
 class RateLimiter:
     """Throttles requests to respect BrightData rate limits."""
 
-    def __init__(self, max_requests_per_minute: int = 30):
+    def __init__(self, max_requests_per_minute: int = 50):
         """
         Initialize the rate limiter.
 
@@ -51,40 +57,45 @@ class RateLimiter:
 
 
 class BrightDataClient:
-    """Client for sending queries to BrightData and parsing CSV responses."""
+    """Client for fetching X post data from BrightData's Dataset API."""
 
-    def __init__(self, api_key: str, base_url: str, rate_limit: int = 30):
+    def __init__(self, api_key: str, dataset_id: str = X_POSTS_DATASET_ID,
+                 rate_limit: int = 15):
         """
         Initialize the BrightData client.
 
         Args:
-            api_key: API key for authenticating with BrightData.
-            base_url: Base URL of the BrightData API.
-            rate_limit: Maximum requests per minute (default 30).
+            api_key: API key (Bearer token) for BrightData.
+            dataset_id: The dataset ID to query (default: X posts).
+            rate_limit: Maximum requests per minute (default 15).
         """
         self.api_key = api_key
-        self.base_url = base_url
+        self.dataset_id = dataset_id
         self.rate_limiter = RateLimiter(rate_limit)
 
-    def execute_queries(self, queries: list[dict]) -> list[dict]:
+    def fetch_posts(self, urls: list[str]) -> list[dict]:
         """
-        Sends each query to BrightData, parses CSV responses into a list of dicts.
-        Deduplicates by 'id' field across all query responses.
-        Raises on any error (no retries).
+        Fetch post data from BrightData, one URL at a time.
+
+        Deduplicates results by 'id' field.
+        Raises on any error (no retries except for 429).
 
         Args:
-            queries: List of query dicts to execute.
+            urls: List of X post URLs to fetch.
 
         Returns:
-            A deduplicated list of post dicts from BrightData CSV responses.
+            A deduplicated list of post dicts.
         """
+        if not urls:
+            return []
+
         all_posts: list[dict] = []
         seen_ids: set[str] = set()
 
-        with httpx.Client() as client:
-            for query in queries:
-                response = self._send_request(client, query)
-                posts = self._parse_csv_response(response.text)
+        with httpx.Client(timeout=120.0) as client:
+            for url in urls:
+                response = self._send_request(client, url)
+                posts = self._parse_response(response)
 
                 for post in posts:
                     post_id = post.get("id", "")
@@ -94,32 +105,45 @@ class BrightDataClient:
 
         return all_posts
 
-    def _send_request(self, client: httpx.Client, query: dict) -> httpx.Response:
+    def _send_request(self, client: httpx.Client, url: str) -> httpx.Response:
         """
-        Send a single query to BrightData with rate limiting.
+        Send a single URL to BrightData Dataset API with rate limiting.
 
         Handles 429 rate limit responses by pausing and retrying once.
         Raises immediately on any other error.
         """
-        url = f"{self.base_url}/search"
+        params = {
+            "dataset_id": self.dataset_id,
+            "format": "json",
+        }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        payload = [{"url": url}]
 
         self.rate_limiter.acquire()
-        response = client.post(url, json=query, headers=headers)
+        response = client.post(
+            BRIGHTDATA_SCRAPE_URL, params=params, headers=headers, json=payload
+        )
 
         if response.status_code == 429:
             retry_after = float(response.headers.get("Retry-After", "60"))
             self.rate_limiter.on_rate_limit_signal(retry_after)
             self.rate_limiter.acquire()
-            response = client.post(url, json=query, headers=headers)
+            response = client.post(
+                BRIGHTDATA_SCRAPE_URL, params=params, headers=headers, json=payload
+            )
 
-        response.raise_for_status()
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"BrightData API error {response.status_code}: {response.text}"
+            )
         return response
 
-    def _parse_csv_response(self, csv_text: str) -> list[dict]:
-        """Parse a CSV response string into a list of dicts."""
-        reader = csv.DictReader(io.StringIO(csv_text))
-        return list(reader)
+    def _parse_response(self, response: httpx.Response) -> list[dict]:
+        """Parse the JSON response into a list of post dicts."""
+        data = response.json()
+        if isinstance(data, list):
+            return data
+        return []

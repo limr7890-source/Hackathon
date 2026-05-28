@@ -13,51 +13,21 @@ def parse_campaign_input(csv_path: str) -> dict:
     Returns:
         A dict containing:
         {
-            "target_hashtags": ["#tag1", "#tag2", ...],
-            "approved_seed_urls": ["url1", "url2", ...],
-            "region": "US",
-            "start_date": "2024-01-01",
-            "end_date": "2024-03-01"
+            "post_urls": ["https://x.com/user/status/123", ...]
         }
     """
-    target_hashtags = []
-    approved_seed_urls = []
-    region = ""
-    start_date = ""
-    end_date = ""
+    post_urls = []
 
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Accumulate hashtags and URLs from all rows
-            # target_hashtags.extend(
-            #     tag.strip() for tag in row["Target_Hashtags"].split(",") if tag.strip()
-            # )
-            # approved_seed_urls.extend(
-            #     url.strip() for url in row["Approved_Seed_URL"].split(",") if url.strip()
-            # )
-
-            hashtag = row.get("Target_Hashtag", "").strip()
-            if hashtag:
-                target_hashtags.append(hashtag)
-                
             url = row.get("Approved_Seed_URL", "").strip()
             if url:
-                approved_seed_urls.append(url)
-            # Use the last row's region/dates (or override per your logic)
-            if not region and row.get("Region", "").strip():
-                region = row.get("Region").strip()
-                start_date = row.get("Start_Date", "").strip()
-                end_date = row.get("End_Date", "").strip()
+                post_urls.append(url)
 
     # Deduplicate while preserving order
-    target_hashtags = list(dict.fromkeys(target_hashtags))
-    approved_seed_urls = list(dict.fromkeys(approved_seed_urls))
+    post_urls = list(dict.fromkeys(post_urls))
 
     return {
-        "target_hashtags": target_hashtags,
-        "approved_seed_urls": approved_seed_urls,
-        "region": region,
-        "start_date": start_date,
-        "end_date": end_date,
+        "post_urls": post_urls,
     }
