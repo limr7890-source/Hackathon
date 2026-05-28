@@ -3,14 +3,22 @@ import datetime
 import json
 import csv
 import os
-import threading
 import time
 import pandas as pd
 import streamlit.components.v1 as components
 
+# ייבוא פונקציית הדירקטוריון מקובץ ה-dashboard.py שלך
+try:
+    from dashboard import render_analytics_dashboard
+except ImportError:
+    st.error("Error: Could not import dashboard.py. Please ensure it is in the same folder.")
+    st.stop()
+
+# הגדרת דף ראשוני - מתבצעת פעם אחת בלבד עבור האפליקציה כולה
 st.set_page_config(page_title="TagAlign AI", layout="wide", initial_sidebar_state="expanded")
 
 # ─── HEARTBEAT SHUTDOWN MECHANISM ───────────────────────────────────────────
+import threading
 if 'last_heartbeat' not in st.session_state:
     st.session_state['last_heartbeat'] = time.time()
 if 'shutdown_watcher_started' not in st.session_state:
@@ -49,7 +57,6 @@ OUTPUT_JSON_PATH = os.path.join(OUTPUT_DIR, "tagalign_input.json")
 OUTPUT_CSV_PATH  = os.path.join(OUTPUT_DIR, "tagalign_input.csv")
 
 def save_for_crew(hashtags, urls, region, start_date, end_date, max_posts):
-    # 1. שמירת קובץ ה-JSON (נשאר כרגיל, הוא מעולה)
     payload = {
         "exported_at": datetime.datetime.now().isoformat(),
         "config": {"region": region, "start_date": str(start_date), "end_date": str(end_date), "max_posts": max_posts},
@@ -59,27 +66,20 @@ def save_for_crew(hashtags, urls, region, start_date, end_date, max_posts):
     with open(OUTPUT_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
-    # 2. יצירת קובץ CSV נקי, סטנדרטי ואיכותי עבור השותף שלך
-    # אנחנו בונים רשימה של שורות שמתאימה בדיוק לטבלה ה-DataFrame
     max_len = max(len(hashtags), len(urls))
     
     with open(OUTPUT_CSV_PATH, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        
-        # כותבים את שמות העמודות (הכותרת של ה-CSV)
         w.writerow(["Target_Hashtags", "Approved_Seed_URL", "Region", "Start_Date", "End_Date", "Max_Posts"])
         
-        # כותבים את הנתונים שורה אחר שורה
         for i in range(max_len):
-            # אם נגמרו ההאשטאגים או הקישורים, שמים מחרוזת ריקה כדי שלא יקרוס
             tag = hashtags[i] if i < len(hashtags) else ""
             url = urls[i] if i < len(urls) else ""
-            
             w.writerow([tag, url, region, str(start_date), str(end_date), max_posts])
 
 # ─── SESSION STATE DEFAULTS ──────────────────────────────────────────────────
 if 'app_mode' not in st.session_state:
-    st.session_state['app_mode'] = 'HOME'  # HOME, CONFIG, DASHBOARD
+    st.session_state['app_mode'] = 'HOME'  # ברירת מחדל קבועה למסך הבית
 if 'hashtags_list' not in st.session_state:
     st.session_state['hashtags_list'] = ["#JustDoIt"]
 if 'urls_list' not in st.session_state:
@@ -91,7 +91,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 .stApp {
-    background: linear-gradient(-45deg, #0f172a, #1e1b4b, #0f172a, #111827) !important;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #dbeafe 100%);
     background-size: 300% 300% !important;
     animation: darkTechGradient 12s ease infinite !important;
 }
@@ -101,71 +101,88 @@ st.markdown("""
     100% { background-position: 0% 50%; }
 }
 [data-testid="stSidebar"] {
-    background: rgba(15,23,42,0.85) !important;
+    background: rgba(251, 146, 60, 0.15) !important;
     backdrop-filter: blur(15px);
-    border-right: 1px solid #1e293b;
+    border-right: 1px solid #fb923c;
 }
 .hero-title {
     font-family: 'Inter', sans-serif; font-weight: 800; font-size: 64px;
     letter-spacing: -2.5px;
-    background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 50%, #38bdf8 100%);
+    background: linear-gradient(135deg, #ea580c 0%, #fb923c 50%, #fdba74 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     margin-top: 50px; margin-bottom: 5px;
 }
 .hero-subtitle {
-    font-family: 'Inter', sans-serif; font-weight: 700; color: #38bdf8 !important;
+    font-family: 'Inter', sans-serif; font-weight: 700; color: #ea580c !important;
     font-size: 14px; margin-bottom: 50px; text-transform: uppercase; letter-spacing: 2.5px;
 }
-.floating-title { color: #ffffff !important; font-family: 'Inter', sans-serif; font-weight: 800; font-size: 34px; margin-bottom: 15px; }
-.floating-desc { color: #94a3b8 !important; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.6 !important; }
-.highlight-purple { color: #38bdf8 !important; font-weight: 800; }
-.highlight-pink { color: #f472b6 !important; font-weight: 800; }
+.floating-title { color: #78350f !important; font-family: 'Inter', sans-serif; font-weight: 800; font-size: 34px; margin-bottom: 15px; }
+.floating-desc { color: #78350f !important; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.6 !important; }
+.highlight-purple { color: #ea580c !important; font-weight: 800; }
+.highlight-pink { color: #c2410c !important; font-weight: 800; }
 
 .cube-section-title {
     font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px;
-    text-transform: uppercase; letter-spacing: 2px; color: #38bdf8 !important;
+    text-transform: uppercase; letter-spacing: 2px; color: #ea580c !important;
     margin-bottom: 12px; display: block;
 }
 .cube-item {
-    background: rgba(255,255,255,0.05); border: 1.5px solid rgba(56,189,248,0.3);
+    background: rgba(255,255,255,0.8); border: 1.5px solid rgba(251, 146, 60, 0.5);
     border-radius: 12px; padding: 10px 12px; display: flex; align-items: center;
     justify-content: space-between; gap: 8px; min-height: 48px; margin-bottom: 8px;
 }
-.cube-item-text { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; color: #e2e8f0 !important; word-break: break-all; flex: 1; }
-.cube-item-required { font-family: 'Inter', sans-serif; font-size: 10px; color: #f472b6 !important; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.cube-item-text { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; color: #78350f !important; word-break: break-all; flex: 1; }
+.cube-item-required { font-family: 'Inter', sans-serif; font-size: 10px; color: #ea580c !important; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
 
 div.stButton > button:first-child {
-    background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%) !important;
-    color: #000000 !important; border-radius: 14px; border: none; padding: 16px 52px;
+    background: linear-gradient(135deg, #fb923c 0%, #fdba74 100%) !important;
+    color: #ffffff !important; border-radius: 14px; border: none; padding: 16px 52px;
     font-family: 'Inter', sans-serif; font-weight: 800; font-size: 18px;
-    box-shadow: 0 8px 0px #38bdf8, 0 15px 25px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 8px 0px #ea580c, 0 15px 25px rgba(251, 146, 60, 0.3);
     transition: all 0.15s ease;
 }
-div.stButton > button:first-child:hover { transform: translateY(2px); box-shadow: 0 6px 0px #38bdf8; }
+div.stButton > button:first-child:hover { transform: translateY(2px); box-shadow: 0 6px 0px #ea580c; }
 
 .menu-item { padding: 12px 0; font-family: 'Inter', sans-serif; font-weight: 700; color: #94a3b8; font-size: 14.5px; }
 
-/* 🌟 הגדרות ה-CSS המקוריות והמדויקות של הבועות והגרפים התלת-ממדיים */
+h3 {
+    color: #c2410c !important;
+    font-family: 'Inter', sans-serif;
+    font-weight: 900 !important;
+    font-size: 20px !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button {
+    color: #c2410c !important;
+    font-weight: 700 !important;
+    font-size: 15px !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+    color: #ea580c !important;
+    font-weight: 800 !important;
+}
+
 .floating-chart-3d {
     position: absolute; top: 25%; right: 6%; display: flex; align-items: flex-end; gap: 8px;
-    background: rgba(15,23,42,0.6); backdrop-filter: blur(8px); border: 1px solid #334155;
+    background: rgba(251, 146, 60, 0.2); backdrop-filter: blur(8px); border: 1px solid #fb923c;
     padding: 24px; border-radius: 20px; animation: floatObject1 6s ease-in-out infinite; z-index: 1;
 }
-.chart-bar { width: 16px; border-radius: 4px; background: linear-gradient(to top, #38bdf8, #f472b6); }
+.chart-bar { width: 16px; border-radius: 4px; background: linear-gradient(to top, #fb923c, #fdba74); }
 .bar-1{height:45px}.bar-2{height:85px}.bar-3{height:60px}.bar-4{height:110px}
 .floating-trend-line {
     position: absolute; bottom: 15%; right: 24%; width: 140px; height: 70px;
-    background: rgba(15,23,42,0.6); border: 1px solid #334155; border-radius: 16px;
+    background: rgba(251, 146, 60, 0.2); border: 1px solid #fb923c; border-radius: 16px;
     display: flex; align-items: center; justify-content: center;
     animation: floatObject2 8s ease-in-out infinite; z-index: 1;
 }
 .factory-bubble {
-    position: absolute; background: rgba(30,41,59,0.7); border-radius: 50%;
-    border: 1px solid #475569; display: flex; flex-direction: column;
+    position: absolute; background: rgba(251, 146, 60, 0.3); border-radius: 50%;
+    border: 1px solid #fb923c; display: flex; flex-direction: column;
     justify-content: center; align-items: center; z-index: 1; pointer-events: none; opacity: 0;
 }
 .trend-tag{font-weight:800;font-size:12px;color:#ffffff !important}
-.trend-stat{font-size:11px;font-weight:800;color:#38bdf8 !important}
+.trend-stat{font-size:11px;font-weight:800;color:#fdba74 !important}
 
 @keyframes verticalRightPipeline {
     0%{transform:translateY(110vh) scale(0.5);opacity:0}
@@ -178,6 +195,76 @@ div.stButton > button:first-child:hover { transform: translateY(2px); box-shadow
 .b-2{width:140px;height:140px;right:18%;animation:verticalRightPipeline 15s linear infinite}
 @keyframes floatObject1{0%,100%{transform:translateY(0px) rotate(3deg)}50%{transform:translateY(-18px) rotate(-2deg)}}
 @keyframes floatObject2{0%,100%{transform:translateY(0px) rotate(-4deg)}50%{transform:translateY(22px) rotate(4deg)}}
+
+/* ⭐ עיצוב שדות קלט יציב ונקי בגוון OFF-WHITE ⭐ */
+
+/* 1. תיבת הבחירה (Geographic Region) */
+div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    background-color: #fcfbfa !important;
+    color: #78350f !important;
+    border: 1.5px solid rgba(251, 146, 60, 0.4) !important;
+    border-radius: 10px !important;
+    outline: none !important;
+}
+
+/* 2. שדות הטקסט (Hashtags / URLs) וניקוי צלליות פנימיות */
+div[data-testid="stTextInput"] div[data-baseweb="base-input"],
+div[data-testid="stTextInput"] input {
+    background-color: #fcfbfa !important;
+    color: #78350f !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+div[data-testid="stTextInput"] [data-baseweb="base-input"] {
+    border: 1.5px solid rgba(251, 146, 60, 0.4) !important;
+    border-radius: 10px !important;
+    background-color: #fcfbfa !important;
+}
+
+/* 3. שדות הזנת תאריכים (From / To) */
+div[data-testid="stDateInput"] div[data-baseweb="input"],
+div[data-testid="stDateInput"] [data-baseweb="base-input"] {
+    background-color: #fcfbfa !important;
+    border: 1.5px solid rgba(251, 146, 60, 0.4) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+div[data-testid="stDateInput"] input {
+    background-color: transparent !important;
+    color: #78350f !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* 4. התאמות פונטים, פלייסהולדרים וחצים */
+div[data-testid="stTextInput"] input::placeholder {
+    color: #94a3b8 !important;
+}
+div[data-testid="stSelectbox"] svg {
+    fill: #78350f !important;
+}
+[data-testid="stWidgetLabel"] p {
+    color: #ea580c !important;
+    font-weight: 700 !important;
+}
+
+div[data-testid="stTextInput"] [data-baseweb="base-input"]:focus-within,
+div[data-testid="stDateInput"] [data-baseweb="base-input"]:focus-within {
+    border-color: #ea580c !important;
+    box-shadow: none !important;
+}
+
+/* 📏 הקטנה וסימטריה של כפתור ה-"＋ Add" */
+div[data-testid="stColumn"] button[key*="add_"] {
+    padding: 10px 20px !important;
+    min-height: 42px !important;
+    font-size: 14px !important;
+    border-radius: 10px !important;
+    margin-top: 0px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -213,13 +300,16 @@ def render_cube_list(items, key_prefix, min_one=True):
 with st.sidebar:
     st.markdown("<h2 style='color:#fff;font-weight:800;letter-spacing:-1px'>🔮 Navigation</h2>", unsafe_allow_html=True)
     st.divider()
-    if st.button("🏠 Home Overview", use_container_width=True):
+    
+    if st.button(" Home Overview", use_container_width=True, key="nav_home"):
         st.session_state['app_mode'] = 'HOME'
         st.rerun()
-    if st.button("⚙️ Campaign Config", use_container_width=True):
+        
+    if st.button(" Campaign Config", use_container_width=True, key="nav_config"):
         st.session_state['app_mode'] = 'CONFIG'
         st.rerun()
-    if st.button("📊 Real-Time Analytics", use_container_width=True):
+        
+    if st.button(" Real-Time Analytics", use_container_width=True, key="nav_dashboard"):
         if 'analysis_config' in st.session_state:
             st.session_state['app_mode'] = 'DASHBOARD'
             st.rerun()
@@ -229,7 +319,6 @@ with st.sidebar:
 
 # ─── 1. HOME MODE ────────────────────────────────────────────────────────────
 if st.session_state['app_mode'] == 'HOME':
-    # 🌟 הבועות והגרפים הזוהרים הוחזרו לכאן פיזית כדי שירוצו בלייב במסך הבית!
     st.markdown("""
         <div class="floating-chart-3d">
             <div class="chart-bar bar-1"></div><div class="chart-bar bar-2"></div>
@@ -237,8 +326,8 @@ if st.session_state['app_mode'] == 'HOME':
         </div>
         <div class="floating-trend-line">
             <svg width="100" height="40" viewBox="0 0 100 40" fill="none">
-                <path d="M5 35 L30 25 L55 28 L75 10 L95 5" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="95" cy="5" r="5" fill="#f472b6" stroke="#fff" stroke-width="2"/>
+                <path d="M5 35 L30 25 L55 28 L75 10 L95 5" stroke="#fb923c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="95" cy="5" r="5" fill="#fdba74" stroke="#fff" stroke-width="2"/>
             </svg>
         </div>
         <div class="factory-bubble b-1"><div class="trend-tag">⚽ #WorldCup</div><div class="trend-stat">94.2%</div></div>
@@ -260,31 +349,37 @@ if st.session_state['app_mode'] == 'HOME':
             </div>
         """, unsafe_allow_html=True)
         
-        if st.button("Proceed to Data Analysis ➡️"):
+        if st.button("Proceed to Data Analysis", key="hero_proceed"):
             st.session_state['app_mode'] = 'CONFIG'
             st.rerun()
 
 
 # ─── 2. CONFIGURATION MODE ───────────────────────────────────────────────────
 elif st.session_state['app_mode'] == 'CONFIG':
-    st.markdown("<h2 style='color:#fff; font-family:Inter,sans-serif;'>Configure Analysis Infrastructure</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='color:#94a3b8;font-family:Inter,sans-serif;font-size:14px'>Set up tracking parameters and seed content below.</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#78350f; font-family:Inter,sans-serif;'>Configure Analysis Infrastructure</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#78320f;font-family:Inter,sans-serif;font-size:14px'>Set up tracking parameters and seed content below.</p>", unsafe_allow_html=True)
     st.divider()
 
     col_config, col_dynamic = st.columns([1, 1.5], gap="large")
 
     with col_config:
-        st.markdown('### 01 Feed Parameters')
-        region = st.selectbox("Geographic Region", ["Worldwide","United States","Europe","Israel","Asia"])
+        st.markdown('### Feed Parameters')
+        st.markdown("<p style='color:#ea580c; font-family:Inter,sans-serif; font-weight:700; font-size:14px; margin-bottom: 0px; padding-bottom: 0px;'>Geographic Region</p>", unsafe_allow_html=True)
+        region = st.selectbox("", ["Worldwide","United States","Europe","Israel","Asia"], label_visibility="collapsed", key="field_region")
+        
         c1, c2 = st.columns(2)
         with c1:
-            start_date = st.date_input("From", datetime.date.today() - datetime.timedelta(days=2))
+            st.markdown("<p style='color:#ea580c; font-family:Inter,sans-serif; font-weight:700; font-size:14px; margin-bottom: 0px; padding-bottom: 0px;'>From</p>", unsafe_allow_html=True)
+            start_date = st.date_input("", datetime.date.today() - datetime.timedelta(days=2), label_visibility="collapsed", key="field_start")
         with c2:
-            end_date = st.date_input("To", datetime.date.today())
-        max_posts = st.slider("Max Posts", 500, 10000, 2000, step=500)
+            st.markdown("<p style='color:#ea580c; font-family:Inter,sans-serif; font-weight:700; font-size:14px; margin-bottom: 0px; padding-bottom: 0px;'>To</p>", unsafe_allow_html=True)
+            end_date = st.date_input("", datetime.date.today(), label_visibility="collapsed", key="field_end")
+        
+        st.markdown("<p style='color:#ea580c; font-family:Inter,sans-serif; font-weight:700; font-size:14px; margin-bottom: 5px; padding-bottom: 0px;'>Max Posts</p>", unsafe_allow_html=True)
+        max_posts = st.slider("", 500, 10000, 2000, step=500, label_visibility="collapsed", key="field_slider")
 
     with col_dynamic:
-        st.markdown('### 02 Campaign Inputs')
+        st.markdown("<h3 style='color:#c2410c !important; font-family:Inter,sans-serif; font-weight:900; font-size:20px; margin-bottom: 5px;'>Input Seeds</h3>", unsafe_allow_html=True)
         tab_tags, tab_urls = st.tabs(["# Hashtags", "🔗 Seed URLs"])
 
         with tab_tags:
@@ -320,7 +415,7 @@ elif st.session_state['app_mode'] == 'CONFIG':
 
     st.divider()
 
-    if st.button("🚀 Run Semantic Analysis", use_container_width=True):
+    if st.button("🚀 Run Semantic Analysis", use_container_width=True, key="action_run"):
         if not st.session_state['hashtags_list'] or not st.session_state['urls_list']:
             st.error("❌ Need at least one hashtag and one URL.")
         else:
@@ -337,41 +432,11 @@ elif st.session_state['app_mode'] == 'CONFIG':
                 "hashtags": list(st.session_state['hashtags_list']),
                 "seed_urls": list(st.session_state['urls_list']),
             }
-            
-            max_len = max(len(st.session_state['hashtags_list']), len(st.session_state['urls_list']))
-            padded_tags = list(st.session_state['hashtags_list']) + [""] * (max_len - len(st.session_state['hashtags_list']))
-            padded_urls = list(st.session_state['urls_list']) + [""] * (max_len - len(st.session_state['urls_list']))
-            
-            st.session_state['final_pandas_df'] = pd.DataFrame({
-                "Target_Hashtags": padded_tags,
-                "Approved_Seed_URL": padded_urls,
-                "Region": [region] * max_len,
-                "Start_Date": [str(start_date)] * max_len,
-                "End_Date": [str(end_date)] * max_len
-            })
-            
             st.session_state['app_mode'] = 'DASHBOARD'
             st.rerun()
 
 
 # ─── 3. DASHBOARD MODE ───────────────────────────────────────────────────────
 elif st.session_state['app_mode'] == 'DASHBOARD':
-    cfg = st.session_state.get('analysis_config', {})
-
-    if st.button("⬅ Back to Configuration"):
-        st.session_state['app_mode'] = 'CONFIG'
-        st.rerun()
-
-    st.markdown("<h2 style='color:#fff'>📊 Campaign Compliance & Semantic Analytics Dashboard</h2>", unsafe_allow_html=True)
-
-    if cfg:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Hashtags Tracked", len(cfg.get("hashtags", [])))
-        c2.metric("Seed URLs", len(cfg.get("seed_urls", [])))
-        c3.metric("Region", cfg.get("region", "—"))
-        c4.metric("Max Posts", f"{cfg.get('max_posts', 0):,}")
-        st.divider()
-        
-        if 'final_pandas_df' in st.session_state:
-            st.markdown("**Processed Pandas DataFrame Matrix:**")
-            st.dataframe(st.session_state['final_pandas_df'], use_container_width=True)
+    # הפעלה נקייה של הדאשבורד מתוך הקובץ החיצוני
+    render_analytics_dashboard()
