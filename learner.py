@@ -1,3 +1,4 @@
+
 import pandas as pd
 from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
@@ -13,18 +14,19 @@ from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
 import evaluate
 
+from sklearn.metrics import f1_score
+
+
+
 df = pd.read_csv("pu_learning_dataset.csv")
 
 print("Dataset loaded successfully!")
 print(f"Total dataset size: {len(df)}")
 print(df["label"].value_counts())
 
-  
 
 #devide the data into training and testing sets
 train_df, test_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df["label"])
-
-
 
 
 # loading a pre-trained sentence transformer model
@@ -45,7 +47,7 @@ y_test = test_df["label"].values
 ####################### first model; logistic regression #######################
 # training a logistic regression model on the training data
 logistic_model = LogisticRegression(max_iter=1000)
-logistic_model.fit(X_train, y_train)
+result = logistic_model.fit(X_train, y_train)
 
 probabilities = logistic_model.predict_proba(X_test)[:, 1]
 ## m = 300
@@ -56,6 +58,8 @@ test_predictions = logistic_model.predict(X_test)
 print("\nEvaluation Results for Classifier 1 (Logistic Regression):")
 print(classification_report(y_test, test_predictions))
 
+#print("Intercept:", logistic_model.intercept_)
+#print("Coefficients:", logistic_model.coef_)
 
 
 
@@ -86,11 +90,13 @@ print(classification_report(y_test, test_predictions_knn))
 # ==========================================
 # BERT Fine-Tuning Setup
 # ==========================================
+
 print("\nStarting Classifier 3 (BERT Fine-tuning) setup...")
 
 # 1. Convert our Pandas DataFrames into Hugging Face Datasets
-train_dataset = Dataset.from_pandas(train_df[['text', 'label']])
-test_dataset = Dataset.from_pandas(test_df[['text', 'label']])
+train_dataset = Dataset.from_pandas(train_df[['text', 'label']].reset_index(drop=True))
+test_dataset = Dataset.from_pandas(test_df[['text', 'label']].reset_index(drop=True))
+
 
 # 2. Load the Tokenizer for DistilBERT
 model_name = "distilbert-base-uncased"
@@ -110,11 +116,13 @@ model = AutoModelForSequenceClassification.from_pretrained(model_name, num_label
 
 # 6. Define the evaluation metric (Accuracy)
 metric = evaluate.load("accuracy")
-
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
-    return metric.compute(predictions=predictions, references=labels)
+    acc = metric.compute(predictions=predictions, references=labels)
+    f1 = f1_score(labels, predictions, average='binary')
+    return {"accuracy": acc["accuracy"], "f1": f1}
+
 
 # 7. Define Training Arguments
 # We keep epochs low (3) and batch size small for local machine safety
@@ -148,3 +156,7 @@ trainer.train()
 print("\nFinal Evaluation Results for Classifier 3 (BERT):")
 eval_results = trainer.evaluate()
 print(eval_results)
+
+predictions_output = trainer.predict(tokenized_test)
+bert_predictions = np.argmax(predictions_output.predictions, axis=-1)
+print(classification_report(y_test, bert_predictions))
