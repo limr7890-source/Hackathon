@@ -30,16 +30,25 @@ def parse_campaign_input(csv_path: str) -> dict:
         reader = csv.DictReader(f)
         for row in reader:
             # Accumulate hashtags and URLs from all rows
-            target_hashtags.extend(
-                tag.strip() for tag in row["Target_Hashtags"].split(",") if tag.strip()
-            )
-            approved_seed_urls.extend(
-                url.strip() for url in row["Approved_Seed_URL"].split(",") if url.strip()
-            )
+            # target_hashtags.extend(
+            #     tag.strip() for tag in row["Target_Hashtags"].split(",") if tag.strip()
+            # )
+            # approved_seed_urls.extend(
+            #     url.strip() for url in row["Approved_Seed_URL"].split(",") if url.strip()
+            # )
+
+            hashtag = row.get("Target_Hashtag", "").strip()
+            if hashtag:
+                target_hashtags.append(hashtag)
+                
+            url = row.get("Approved_Seed_URL", "").strip()
+            if url:
+                approved_seed_urls.append(url)
             # Use the last row's region/dates (or override per your logic)
-            region = row["Region"].strip()
-            start_date = row["Start_Date"].strip()
-            end_date = row["End_Date"].strip()
+            if not region and row.get("Region", "").strip():
+                region = row.get("Region").strip()
+                start_date = row.get("Start_Date", "").strip()
+                end_date = row.get("End_Date", "").strip()
 
     # Deduplicate while preserving order
     target_hashtags = list(dict.fromkeys(target_hashtags))
