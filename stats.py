@@ -1,15 +1,21 @@
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+
+
+# Color scheme: Orange shades for charts, light blue background
+COLORS = {
+    'orange': '#fb923c',           # Main orange for hijacked
+    'light_orange': '#fdba74',     # Light orange for aligned
+    'dark_text': '#422006',        # Dark brown text (bold and readable)
+    'light_bg': 'rgba(255, 255, 255, 1)',      # Pure white background
+    'chart_bg': 'rgba(254, 252, 232, 0.9)',    # Very light cream for charts
+    'white': '#ffffff'
+}
 
 
 def calculate_compliance_metrics(df):
     """
-    מחשב את כל המדדים הסטטיסטיים של הקמפיין:
-    - Brand Alignment Score™ (אחוז התאמה כללי)
-    - Hashtag Hijack Rate (אחוז חטיפת האשטאגים)
-    - מספר פוסטים מתאימים ולא מתאימים
-    - Estimated Wasted Reach (טווח הגעה שאבד לספאם)
+    Calculate all campaign metrics including Brand Alignment Score and Wasted Reach
     """
     total_posts = len(df)
     aligned_posts = df[df['Model_Label'] == 1].shape[0]
@@ -18,13 +24,12 @@ def calculate_compliance_metrics(df):
     brand_alignment_score = (aligned_posts / total_posts * 100) if total_posts > 0 else 0
     hijacking_rate = (misaligned_posts / total_posts * 100) if total_posts > 0 else 0
     
-    # חישוב Estimated Wasted Reach
+    # Calculate Estimated Wasted Reach
     if 'Estimated_Reach' in df.columns:
         total_reach = df['Estimated_Reach'].sum()
         wasted_reach = df[df['Model_Label'] == 0]['Estimated_Reach'].sum()
         wasted_reach_percentage = (wasted_reach / total_reach * 100) if total_reach > 0 else 0
     else:
-        # fallback אם אין עמודת Reach - משתמש בלייקים כהערכה
         total_reach = df['Likes'].sum()
         wasted_reach = df[df['Model_Label'] == 0]['Likes'].sum()
         wasted_reach_percentage = (wasted_reach / total_reach * 100) if total_reach > 0 else 0
@@ -41,13 +46,47 @@ def calculate_compliance_metrics(df):
     }
 
 
+def detect_serial_hijackers(df, min_spam_posts=2):
+    """
+    Detect users who repeatedly post spam (Serial Hijackers)
+    Returns DataFrame of serial hijackers ranked by spam count
+    """
+    if 'Username' not in df.columns:
+        return pd.DataFrame()
+    
+    # Count spam posts per user
+    spam_df = df[df['Model_Label'] == 0].copy()
+    hijacker_stats = spam_df.groupby('Username').agg({
+        'Model_Label': 'count',
+        'Likes': 'sum',
+        'Comments': 'sum',
+        'Estimated_Reach': 'sum' if 'Estimated_Reach' in df.columns else 'count'
+    }).reset_index()
+    
+    hijacker_stats.columns = ['Username', 'Spam_Posts', 'Total_Likes', 'Total_Comments', 'Total_Reach']
+    hijacker_stats['Total_Engagement'] = hijacker_stats['Total_Likes'] + hijacker_stats['Total_Comments']
+    
+    # Filter for serial hijackers (multiple spam posts)
+    serial_hijackers = hijacker_stats[hijacker_stats['Spam_Posts'] >= min_spam_posts]
+    serial_hijackers = serial_hijackers.sort_values('Spam_Posts', ascending=False)
+    
+    # Add threat level
+    def get_threat_level(spam_count):
+        if spam_count >= 5:
+            return "EXTREME"
+        elif spam_count >= 3:
+            return "HIGH"
+        else:
+            return "MODERATE"
+    
+    serial_hijackers['Threat_Level'] = serial_hijackers['Spam_Posts'].apply(get_threat_level)
+    
+    return serial_hijackers
+
+
 def calculate_hashtag_performance(df):
     """
-    מחשב ביצועים לפי האשטאג (Hashtag Risk Analysis):
-    - כמה פוסטים יש לכל האשטאג
-    - כמה מהם מתאימים (1) וכמה לא (0)
-    - אחוז התאמה לכל האשטאג
-    - Risk Level (High/Medium/Low) לפי Hijack Rate
+    Calculate performance per hashtag with risk levels
     """
     hashtag_stats = df.groupby('Target_Hashtag').agg({
         'Model_Label': ['count', 'sum']
@@ -58,18 +97,15 @@ def calculate_hashtag_performance(df):
     hashtag_stats['Hijack_Rate'] = ((hashtag_stats['Misaligned_Posts'] / hashtag_stats['Total_Posts']) * 100).round(1)
     hashtag_stats['Brand_Alignment'] = ((hashtag_stats['Aligned_Posts'] / hashtag_stats['Total_Posts']) * 100).round(1)
     
-    # חישוב Risk Level
     def calculate_risk(hijack_rate):
         if hijack_rate >= 50:
-            return "🔴 High Risk"
+            return "HIGH RISK"
         elif hijack_rate >= 30:
-            return "🟡 Medium Risk"
+            return "MEDIUM RISK"
         else:
-            return "🟢 Low Risk"
+            return "LOW RISK"
     
     hashtag_stats['Risk_Level'] = hashtag_stats['Hijack_Rate'].apply(calculate_risk)
-    
-    # מסדר לפי Hijack Rate (הכי מסוכן קודם)
     hashtag_stats = hashtag_stats.sort_values('Hijack_Rate', ascending=False)
     
     return hashtag_stats
@@ -77,11 +113,7 @@ def calculate_hashtag_performance(df):
 
 def calculate_engagement_metrics(df):
     """
-    מחשב מדדי מעורבות (Engagement Quality Score):
-    - סך כל הלייקים והתגובות לפוסטים מתאימים (Clean Engagement)
-    - סך כל הלייקים והתגובות לפוסטים לא מתאימים (Polluted Engagement)
-    - ממוצע מעורבות לפי סוג פוסט
-    - Engagement Quality Score (אחוז המעורבות האיכותית)
+    Calculate engagement quality metrics
     """
     aligned_df = df[df['Model_Label'] == 1]
     misaligned_df = df[df['Model_Label'] == 0]
@@ -92,51 +124,52 @@ def calculate_engagement_metrics(df):
     
     engagement_quality_score = (aligned_total_engagement / total_engagement * 100) if total_engagement > 0 else 0
     
-    engagement_stats = {
+    return {
         "aligned_total_likes": aligned_df['Likes'].sum(),
         "aligned_total_comments": aligned_df['Comments'].sum(),
         "aligned_total_engagement": aligned_total_engagement,
         "aligned_avg_likes": round(aligned_df['Likes'].mean(), 1) if len(aligned_df) > 0 else 0,
         "aligned_avg_comments": round(aligned_df['Comments'].mean(), 1) if len(aligned_df) > 0 else 0,
-        
         "misaligned_total_likes": misaligned_df['Likes'].sum(),
         "misaligned_total_comments": misaligned_df['Comments'].sum(),
         "misaligned_total_engagement": misaligned_total_engagement,
         "misaligned_avg_likes": round(misaligned_df['Likes'].mean(), 1) if len(misaligned_df) > 0 else 0,
         "misaligned_avg_comments": round(misaligned_df['Comments'].mean(), 1) if len(misaligned_df) > 0 else 0,
-        
         "engagement_quality_score": round(engagement_quality_score, 1),
         "total_engagement": total_engagement
     }
-    
-    return engagement_stats
 
 
 def create_compliance_pie_chart(metrics):
     """
-    יוצר גרף עוגה (Pie Chart) שמראה את החלוקה בין פוסטים מתאימים ולא מתאימים
-    (Brand Alignment Score™ Visualization)
+    Create pie chart with orange color scheme
     """
-    labels = ['✅ Aligned Posts', '❌ Hijacked Posts']
+    labels = ['Aligned Posts', 'Hijacked Posts']
     values = [metrics['aligned_posts'], metrics['misaligned_posts']]
-    colors = ['#10b981', '#ef4444']  # ירוק ואדום למראה מקצועי יותר
+    colors = [COLORS['light_orange'], COLORS['orange']]
     
     fig = go.Figure(data=[go.Pie(
         labels=labels,
         values=values,
-        marker=dict(colors=colors),
+        marker=dict(colors=colors, line=dict(color='#ffffff', width=3)),
         hole=0.4,
         textinfo='label+percent',
-        textfont=dict(size=14, color='white', family='Inter', weight=600)
+        textfont=dict(size=16, color='#422006', family='Inter', weight=900),
+        rotation=90,
+        direction='clockwise'
     )])
     
     fig.update_layout(
         title="Brand Alignment Distribution",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white', family='Inter'),
+        paper_bgcolor=COLORS['light_bg'],
+        plot_bgcolor=COLORS['light_bg'],
+        font=dict(color='#422006', family='Inter', size=14, weight=800),
         showlegend=True,
-        height=400
+        height=400,
+        title_font=dict(size=16, color='#422006', weight=800),
+        legend=dict(
+            font=dict(size=14, color='#422006', weight=800)
+        )
     )
     
     return fig
@@ -144,55 +177,61 @@ def create_compliance_pie_chart(metrics):
 
 def create_hashtag_risk_heatmap(hashtag_stats):
     """
-    יוצר Campaign Integrity Heatmap™ - מפת חום שמראה את רמת הסיכון של כל האשטאג
+    Create heatmap with orange gradient and BOLD labels
     """
-    # מכין צבעים לפי Hijack Rate
+    # Color gradient from light orange (safe) to dark orange (dangerous)
     colors = []
     for rate in hashtag_stats['Hijack_Rate']:
         if rate >= 50:
-            colors.append('#ef4444')  # אדום - High Risk
+            colors.append('#ea580c')  # Dark orange
         elif rate >= 30:
-            colors.append('#f59e0b')  # כתום - Medium Risk
+            colors.append('#fb923c')  # Medium orange
         else:
-            colors.append('#10b981')  # ירוק - Low Risk
+            colors.append('#fdba74')  # Light orange
     
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
-        x=hashtag_stats['Hashtag'],
-        y=hashtag_stats['Hijack_Rate'],
-        name='Hijack Rate',
+        y=hashtag_stats['Hashtag'],
+        x=hashtag_stats['Hijack_Rate'],
+        orientation='h',
         marker_color=colors,
         text=[f"{rate}%" for rate in hashtag_stats['Hijack_Rate']],
         textposition='auto',
-        textfont=dict(size=14, color='white', family='Inter', weight=700),
-        hovertemplate='<b>%{x}</b><br>Hijack Rate: %{y}%<br><extra></extra>'
+        textfont=dict(size=15, color='white', family='Inter', weight=900),
+        hovertemplate='<b>%{y}</b><br>Hijack Rate: %{x}%<br><extra></extra>'
     ))
     
     fig.update_layout(
-        title="Campaign Integrity Heatmap™",
-        xaxis_title="Hashtag",
-        yaxis_title="Hijack Rate (%)",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(30,41,59,0.3)',
-        font=dict(color='white', family='Inter'),
+        title="Campaign Integrity Heatmap",
+        xaxis_title="Hijack Rate (%)",
+        yaxis_title="Hashtag",
+        paper_bgcolor=COLORS['light_bg'],
+        plot_bgcolor=COLORS['chart_bg'],
+        font=dict(color='#422006', family='Inter', size=14, weight=700),
         showlegend=False,
         height=450,
-        yaxis=dict(range=[0, 100])
+        xaxis=dict(
+            range=[0, 100],
+            tickfont=dict(size=13, color='#422006', weight=700)
+        ),
+        yaxis=dict(
+            tickfont=dict(size=14, color='#422006', weight=800)
+        ),
+        title_font=dict(size=16, color='#422006', weight=800)
     )
     
-    # הוספת קווי התראה
-    fig.add_hline(y=50, line_dash="dash", line_color="red", opacity=0.5, 
-                  annotation_text="High Risk Threshold", annotation_position="right")
-    fig.add_hline(y=30, line_dash="dash", line_color="orange", opacity=0.5,
-                  annotation_text="Medium Risk Threshold", annotation_position="right")
+    fig.add_vline(x=50, line_dash="dash", line_color='#ea580c', opacity=0.5, 
+                  annotation_text="High Risk", annotation_position="top")
+    fig.add_vline(x=30, line_dash="dash", line_color='#fb923c', opacity=0.5,
+                  annotation_text="Medium Risk", annotation_position="top")
     
     return fig
 
 
 def create_engagement_comparison_chart(engagement_stats):
     """
-    יוצר גרף השוואה של מעורבות בין פוסטים מתאימים ולא מתאימים
+    Create engagement comparison with orange colors
     """
     categories = ['Avg Likes', 'Avg Comments']
     aligned_values = [engagement_stats['aligned_avg_likes'], engagement_stats['aligned_avg_comments']]
@@ -204,30 +243,41 @@ def create_engagement_comparison_chart(engagement_stats):
         x=categories,
         y=aligned_values,
         name='Aligned Posts',
-        marker_color='#38bdf8',
+        marker_color=COLORS['light_orange'],
         text=[f"{v:.1f}" for v in aligned_values],
-        textposition='auto'
+        textposition='auto',
+        textfont=dict(color='#422006', size=13, family='Inter', weight=900)
     ))
     
     fig.add_trace(go.Bar(
         x=categories,
         y=misaligned_values,
-        name='Misaligned Posts',
-        marker_color='#f472b6',
+        name='Hijacked Posts',
+        marker_color=COLORS['orange'],
         text=[f"{v:.1f}" for v in misaligned_values],
-        textposition='auto'
+        textposition='auto',
+        textfont=dict(color='white', size=13, family='Inter', weight=900)
     ))
     
     fig.update_layout(
-        title="Engagement Comparison: Aligned vs Misaligned",
+        title="Engagement Quality Analysis",
         xaxis_title="Metric",
         yaxis_title="Average Count",
         barmode='group',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(30,41,59,0.3)',
-        font=dict(color='white', family='Inter'),
+        paper_bgcolor=COLORS['light_bg'],
+        plot_bgcolor=COLORS['chart_bg'],
+        font=dict(color='#422006', family='Inter', size=14, weight=700),
         showlegend=True,
-        height=400
+        height=400,
+        title_font=dict(size=16, color='#422006', weight=800),
+        xaxis=dict(
+            tickfont=dict(size=14, color='#422006', weight=800),
+            title_font=dict(size=14, color='#422006', weight=800)
+        ),
+        yaxis=dict(
+            tickfont=dict(size=13, color='#422006', weight=800),
+            title_font=dict(size=14, color='#422006', weight=800)
+        )
     )
     
     return fig
@@ -235,26 +285,19 @@ def create_engagement_comparison_chart(engagement_stats):
 
 def create_post_audit_table(df, top_n=20):
     """
-    יוצר טבלה מסודרת של הפוסטים המובילים עם הסיווג שלהם
-    מוסיף עמודה ויזואלית של Status (✅ Aligned / ❌ Misaligned)
-    כולל AI Confidence Score ו-Spam Reason (AI Explanation Layer)
-    מציג רק את top_n הפוסטים עם המעורבות הגבוהה ביותר
+    Create post audit table with username tracking
     """
     audit_df = df.copy()
-    audit_df['Status'] = audit_df['Model_Label'].apply(lambda x: '✅ Aligned' if x == 1 else '❌ Hijacked')
+    audit_df['Status'] = audit_df['Model_Label'].apply(lambda x: 'Aligned' if x == 1 else 'Hijacked')
     audit_df['Engagement_Score'] = audit_df['Likes'] + audit_df['Comments']
     
-    # מסדר לפי Engagement Score (הכי פופולרי קודם)
     audit_df = audit_df.sort_values('Engagement_Score', ascending=False)
-    
-    # לוקח רק את top_n הפוסטים המובילים
     audit_df = audit_df.head(top_n)
     
-    # בוחר את העמודות הרלוונטיות לתצוגה (כולל AI fields אם קיימים)
-    columns_to_show = ['Target_Hashtag', 'Post_Text', 'Likes', 'Comments', 'Status', 'Engagement_Score']
+    columns_to_show = ['Username', 'Target_Hashtag', 'Post_Text', 'Likes', 'Comments', 'Status', 'Engagement_Score']
     
     if 'AI_Confidence' in audit_df.columns:
-        columns_to_show.append('AI_Confidence')
+        columns_to_show.insert(-1, 'AI_Confidence')
     if 'Spam_Reason' in audit_df.columns:
         columns_to_show.append('Spam_Reason')
     
@@ -263,33 +306,16 @@ def create_post_audit_table(df, top_n=20):
     return display_df
 
 
-# אם מריצים את הקובץ הזה ישירות, הוא יריץ דוגמה עם נתונים מדומים
 if __name__ == "__main__":
     from mock_results import get_mock_model_results
     
     print("=== Testing Stats Module ===\n")
-    
-    # טוען נתונים מדומים
     df = get_mock_model_results()
     
-    # מחשב מדדים
     metrics = calculate_compliance_metrics(df)
-    print("📊 Compliance Metrics:")
-    print(f"   Total Posts: {metrics['total_posts']}")
-    print(f"   Aligned: {metrics['aligned_posts']} ({metrics['compliance_rate']}%)")
-    print(f"   Misaligned: {metrics['misaligned_posts']} ({metrics['hijacking_rate']}%)\n")
+    print(f"Brand Alignment Score: {metrics['brand_alignment_score']}%")
+    print(f"Hijacking Rate: {metrics['hijacking_rate']}%\n")
     
-    # ביצועים לפי האשטאג
-    hashtag_perf = calculate_hashtag_performance(df)
-    print("🏷️ Hashtag Performance:")
-    print(hashtag_perf.to_string(index=False))
-    print()
-    
-    # מדדי מעורבות
-    engagement = calculate_engagement_metrics(df)
-    print("💬 Engagement Metrics:")
-    print(f"   Aligned Avg Likes: {engagement['aligned_avg_likes']}")
-    print(f"   Misaligned Avg Likes: {engagement['misaligned_avg_likes']}")
-    print()
-    
-    print("✅ All stats calculations working perfectly!")
+    serial_hijackers = detect_serial_hijackers(df)
+    print("Serial Hijackers Detected:")
+    print(serial_hijackers.to_string(index=False))
