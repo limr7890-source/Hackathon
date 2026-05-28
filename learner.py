@@ -7,7 +7,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 from sklearn.neighbors import KNeighborsClassifier
 
-
+import torch
+import numpy as np
+from datasets import Dataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+import evaluate
 
 df = pd.read_csv("pu_learning_dataset.csv")
 
@@ -75,3 +79,72 @@ test_probabilities_knn = classifier2.predict_proba(X_test)[:, 1]
 
 print("\nEvaluation Results for Classifier 2 (KNN):")
 print(classification_report(y_test, test_predictions_knn))
+
+
+
+
+# ==========================================
+# BERT Fine-Tuning Setup
+# ==========================================
+print("\nStarting Classifier 3 (BERT Fine-tuning) setup...")
+
+# 1. Convert our Pandas DataFrames into Hugging Face Datasets
+train_dataset = Dataset.from_pandas(train_df[['text', 'label']])
+test_dataset = Dataset.from_pandas(test_df[['text', 'label']])
+
+# 2. Load the Tokenizer for DistilBERT
+model_name = "distilbert-base-uncased"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+# 3. Define tokenization function
+def tokenize_function(examples):
+    return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=256)
+
+# 4. Tokenize the datasets
+print("Tokenizing text datasets...")
+tokenized_train = train_dataset.map(tokenize_function, batched=True)
+tokenized_test = test_dataset.map(tokenize_function, batched=True)
+
+# 5. Load the base DistilBERT model configured for binary classification (num_labels=2)
+model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+
+# 6. Define the evaluation metric (Accuracy)
+metric = evaluate.load("accuracy")
+
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)
+    return metric.compute(predictions=predictions, references=labels)
+
+# 7. Define Training Arguments
+# We keep epochs low (3) and batch size small for local machine safety
+training_args = TrainingArguments(
+    output_dir="./results",
+    learning_rate=2e-5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    load_best_model_at_end=True,
+    logging_steps=10
+)
+
+# 8. Initialize the Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_train,
+    eval_dataset=tokenized_test,
+    compute_metrics=compute_metrics,
+)
+
+# 9. Launch the Training process!
+print("\nTraining Classifier 3 (BERT)... This might take a few minutes.")
+trainer.train()
+
+# 10. Final Evaluation
+print("\nFinal Evaluation Results for Classifier 3 (BERT):")
+eval_results = trainer.evaluate()
+print(eval_results)
