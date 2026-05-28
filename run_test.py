@@ -1,14 +1,12 @@
 """
-Test script for the Campaign Post Scraper pipeline.
+Test script for the Instagram Campaign Post Scraper pipeline.
 
 Usage:
     python run_test.py                          # uses sample_campaign.csv
     python run_test.py path/to/your_file.csv    # uses a custom CSV
-
-Requires BRIGHTDATA_API_KEY environment variable to be set.
 """
 
-import json
+import csv as csv_mod
 import os
 import sys
 
@@ -16,8 +14,7 @@ from campaign_post_scraper.pipeline import run_pipeline
 
 
 def main():
-    # Determine input CSV path
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
         csv_path = sys.argv[1]
     else:
         csv_path = "sample_campaign.csv"
@@ -26,46 +23,50 @@ def main():
         print(f"ERROR: CSV file not found: {csv_path}")
         sys.exit(1)
 
-    # Get API key from environment
-    api_key = "c755ca2c-f0c7-478d-bcb0-750606dda714"
-    if not api_key:
-        print("ERROR: Set the BRIGHTDATA_API_KEY environment variable.")
-        print("  e.g.: set BRIGHTDATA_API_KEY=your-key-here")
-        sys.exit(1)
+    api_key = os.environ.get("BRIGHTDATA_API_KEY", "c755ca2c-f0c7-478d-bcb0-750606dda714")
+    output_path = "output_posts.csv"
+    seed_path = "seed_posts.csv"
 
-    output_path = "output_posts.json"
-
-    print(f"Input CSV:   {csv_path}")
-    print(f"Output JSON: {output_path}")
-    print(f"API Key:     {api_key[:8]}...{api_key[-4:]}")
+    print(f"Input CSV:    {csv_path}")
+    print(f"Seed CSV:     {seed_path}")
+    print(f"Output CSV:   {output_path}")
+    print(f"API Key:      {api_key[:8]}...{api_key[-4:]}")
     print("-" * 50)
 
     try:
         result = run_pipeline(
             input_csv_path=csv_path,
-            output_json_path=output_path,
+            output_csv_path=output_path,
             api_key=api_key,
+            seed_csv_path=seed_path,
         )
     except RuntimeError as e:
         print(f"\nPIPELINE FAILED: {e}")
         sys.exit(1)
 
     print(f"\nPipeline completed successfully!")
-    print(f"  Posts collected: {result['posts_collected']}")
-    print(f"  Output file:    {result['output_path']}")
+    print(f"  Hashtags searched: {result['hashtag_count']}")
+    print(f"  Total posts:       {result['total_posts']}")
+    print(f"  Seed CSV:          {result['seed_path']}")
+    print(f"  Output CSV:        {result['output_path']}")
 
-    # Print a preview of the output
-    if result["posts_collected"] > 0:
+    # Preview seed CSV
+    if os.path.exists(seed_path):
+        with open(seed_path, "r", encoding="utf-8") as f:
+            rows = list(csv_mod.DictReader(f))
+        print(f"\nSeed posts ({len(rows)} rows):")
+        for row in rows[:3]:
+            print(f"  {row.get('username', '')} - {row.get('url', '')}")
+
+    # Preview output CSV
+    if result["total_posts"] > 0:
         with open(output_path, "r", encoding="utf-8") as f:
-            posts = json.load(f)
-
-        print(f"\nFirst post preview:")
-        first = posts[0]
-        for key, value in first.items():
-            display = str(value)[:80]
-            print(f"  {key}: {display}")
+            rows = list(csv_mod.DictReader(f))
+        print(f"\nGrouped posts ({len(rows)} rows):")
+        for row in rows[:5]:
+            print(f"  [{row['target_hashtag']}] {row['username']} - {row['url']}")
     else:
-        print("\nNo posts were collected.")
+        print("\nNo grouped posts were produced.")
 
 
 if __name__ == "__main__":

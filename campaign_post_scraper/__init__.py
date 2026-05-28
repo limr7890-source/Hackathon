@@ -1,4 +1,4 @@
-"""Campaign Post Scraper - A pipeline for collecting social media posts from X via BrightData."""
+"""Campaign Post Scraper - A pipeline for collecting Instagram posts via BrightData."""
 
 from campaign_post_scraper.input_parser import parse_campaign_input
 from campaign_post_scraper.brightdata_client import BrightDataClient, RateLimiter

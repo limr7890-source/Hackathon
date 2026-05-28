@@ -1,91 +1,55 @@
-"""BrightData client module for fetching X posts via the Dataset API."""
+"""BrightData client module for fetching Instagram posts via the Scrape API."""
 
-import csv
-import io
 import time
 
 import httpx
 
-# BrightData Dataset API endpoint
+# BrightData scrape endpoint (fast, reliable)
 BRIGHTDATA_SCRAPE_URL = "https://api.brightdata.com/datasets/v3/scrape"
 
-# Dataset ID for X (Twitter) posts
-X_POSTS_DATASET_ID = "gd_lwxkxvnf1cynvib9co"
+# Dataset ID for Instagram posts
+IG_POSTS_DATASET_ID = "gd_lk5ns7kz21pck8jpis"
 
 
 class RateLimiter:
     """Throttles requests to respect BrightData rate limits."""
 
-    def __init__(self, max_requests_per_minute: int = 50):
-        """
-        Initialize the rate limiter.
-
-        Args:
-            max_requests_per_minute: Maximum number of requests allowed per minute.
-        """
+    def __init__(self, max_requests_per_minute: int = 15):
         self.max_requests_per_minute = max_requests_per_minute
         self._request_timestamps: list[float] = []
         self._window_seconds: float = 60.0
 
     def acquire(self) -> None:
-        """Blocks until a request slot is available."""
         while True:
             now = time.time()
             self._request_timestamps = [
                 ts for ts in self._request_timestamps
                 if now - ts < self._window_seconds
             ]
-
             if len(self._request_timestamps) < self.max_requests_per_minute:
                 self._request_timestamps.append(now)
                 return
-
             oldest = self._request_timestamps[0]
             sleep_duration = self._window_seconds - (now - oldest)
             if sleep_duration > 0:
                 time.sleep(sleep_duration)
 
     def on_rate_limit_signal(self, reset_time: float) -> None:
-        """
-        Pauses until the rate limit window resets.
-
-        Args:
-            reset_time: Time in seconds to wait before resuming.
-        """
         if reset_time > 0:
             time.sleep(reset_time)
 
 
 class BrightDataClient:
-    """Client for fetching X post data from BrightData's Dataset API."""
+    """Client for fetching Instagram posts by URL."""
 
-    def __init__(self, api_key: str, dataset_id: str = X_POSTS_DATASET_ID,
+    def __init__(self, api_key: str, dataset_id: str = IG_POSTS_DATASET_ID,
                  rate_limit: int = 15):
-        """
-        Initialize the BrightData client.
-
-        Args:
-            api_key: API key (Bearer token) for BrightData.
-            dataset_id: The dataset ID to query (default: X posts).
-            rate_limit: Maximum requests per minute (default 15).
-        """
         self.api_key = api_key
         self.dataset_id = dataset_id
         self.rate_limiter = RateLimiter(rate_limit)
 
     def fetch_posts(self, urls: list[str]) -> list[dict]:
-        """
-        Fetch post data from BrightData, one URL at a time.
-
-        Deduplicates results by 'id' field.
-        Raises on any error (no retries except for 429).
-
-        Args:
-            urls: List of X post URLs to fetch.
-
-        Returns:
-            A deduplicated list of post dicts.
-        """
+        """Fetch Instagram posts by URL using the /scrape endpoint."""
         if not urls:
             return []
 
@@ -94,32 +58,61 @@ class BrightDataClient:
 
         with httpx.Client(timeout=120.0) as client:
             for url in urls:
-                response = self._send_request(client, url)
-                posts = self._parse_response(response)
-
+                posts = self._scrape_by_url(client, url)
                 for post in posts:
-                    post_id = post.get("id", "")
+                    post_id = post.get("post_id", "") or post.get("pk", "")
                     if post_id and post_id not in seen_ids:
                         seen_ids.add(post_id)
                         all_posts.append(post)
 
         return all_posts
 
-    def _send_request(self, client: httpx.Client, url: str) -> httpx.Response:
+    def expand_by_hashtags(self, seed_posts: list[dict],
+                           target_hashtags: list[str]) -> dict:
         """
-        Send a single URL to BrightData Dataset API with rate limiting.
+        Expand: group fetched posts by target hashtags.
 
-        Handles 429 rate limit responses by pausing and retrying once.
-        Raises immediately on any other error.
+        For each target hashtag, find all seed posts that contain it.
+        A post can appear under multiple hashtags.
+
+        Args:
+            seed_posts: Posts already fetched via fetch_posts().
+            target_hashtags: Hashtags from the CSV Target_Hashtag column.
+
+        Returns:
+            Dict mapping each hashtag to a list of matching posts.
         """
-        params = {
-            "dataset_id": self.dataset_id,
-            "format": "json",
-        }
+        if not target_hashtags:
+            return {}
+
+        # Normalize target hashtags
+        targets = {}
+        for tag in target_hashtags:
+            t = tag.strip().lower()
+            if not t.startswith("#"):
+                t = f"#{t}"
+            display = tag if tag.startswith("#") else f"#{tag}"
+            targets[t] = display
+
+        grouped: dict[str, list[dict]] = {d: [] for d in targets.values()}
+
+        for post in seed_posts:
+            post_hashtags = post.get("hashtags") or []
+            post_tags_lower = {h.strip().lower() for h in post_hashtags}
+
+            for norm, display in targets.items():
+                if norm in post_tags_lower:
+                    grouped[display].append(post)
+
+        return grouped
+
+    def _scrape_by_url(self, client: httpx.Client, url: str) -> list[dict]:
+        """Fetch a single post using the /scrape endpoint."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        params = {"dataset_id": self.dataset_id, "format": "json"}
         payload = [{"url": url}]
 
         self.rate_limiter.acquire()
@@ -137,13 +130,8 @@ class BrightDataClient:
 
         if response.status_code >= 400:
             raise RuntimeError(
-                f"BrightData API error {response.status_code}: {response.text}"
+                f"BrightData error {response.status_code}: {response.text[:200]}"
             )
-        return response
 
-    def _parse_response(self, response: httpx.Response) -> list[dict]:
-        """Parse the JSON response into a list of post dicts."""
         data = response.json()
-        if isinstance(data, list):
-            return data
-        return []
+        return data if isinstance(data, list) else []
