@@ -1,0 +1,21 @@
+{
+  "exported_at": "2026-05-29T03:17:12.995011",
+  "config": {
+    "region": "Europe",
+    "start_date": "2026-05-12",
+    "end_date": "2026-05-15",
+    "max_posts": 2000
+  },
+  "hashtags": [
+    "#JustDoIt",
+    "#vacation",
+    "#fleece",
+    "#iran",
+    "#gaza"
+  ],
+  "seed_urls": [
+    "https://x.com/nike/status/123456789",
+    "https://x.com/fleece/status/123456789",
+    "https://x.com/fleece2/status/123456789"
+  ]
+}
