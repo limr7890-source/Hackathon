@@ -338,7 +338,7 @@ def train_classifiers(pickle_path="final_balanced_dataset.pkl"):
     results["KNN (k=5, cosine)"] = train_knn(X_train, X_test, y_train, y_test, n_neighbors=5)
     
     # 3. BERT
-    results["BERT (DistilBERT)"] = train_bert(train_df, test_df, y_test, num_epochs=3)
+    #results["BERT (DistilBERT)"] = train_bert(train_df, test_df, y_test, num_epochs=3)
     
     # Compare all models
     comparison_df = compare_models(results)
