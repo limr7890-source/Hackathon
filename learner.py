@@ -16,35 +16,103 @@ import evaluate
 
 from sklearn.metrics import f1_score
 
+import pickle
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
 
+# =========================================================================
+# 1. Loading your real positive posts (what the team collected)
+# =========================================================================
+print("Loading and computing vectors for the positive posts from the campaign...")
+positive_texts = [
+    "Check out our new running shoes! Lightweight and durable #JustDoIt",
+    "Run faster, push harder. The new collection is live now #JustDoIt",
+    "Unboxing the new gym gear. Absolutely loving the design and comfort! #JustDoIt"
+    # ... paste the full list brought by the team here
+]
 
-df = pd.read_csv("pu_learning_dataset.csv")
-
-print("Dataset loaded successfully!")
-print(f"Total dataset size: {len(df)}")
-print(df["label"].value_counts())
-
-
-#devide the data into training and testing sets
-train_df, test_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df["label"])
-
-
-# loading a pre-trained sentence transformer model
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
+positive_embeddings = embedder.encode(positive_texts) # Fast computation for a small amount
+num_positives = len(positive_texts)
 
-#encoding the text data into embeddings for training and testing sets
-X_train = embedder.encode(train_df["text"].tolist(), show_progress_bar=True)
-X_test = embedder.encode(test_df["text"].tolist(), show_progress_bar=True)
+# Computing the final campaign center
+campaign_center = np.mean(positive_embeddings, axis=0).reshape(1, -1)
 
-# extracting the labels for training and testing sets
-y_train = train_df["label"].values
-y_test = test_df["label"].values
+# =========================================================================
+# 2. Loading the huge negative dataset from the Pickle file
+# =========================================================================
+print("Loading the negative dataset from the Pickle file...")
+with open("instagram_negatives_cache.pkl", "rb") as f:
+    cache_data = pickle.load(f)
+
+all_negative_texts = cache_data["texts"]
+all_negative_embeddings = cache_data["embeddings"]
+
+# =========================================================================
+# 3. Live, fast semantic filtering to find hard and easy negatives for the specific campaign
+# =========================================================================
+print("Computing distances and separating into hard and easy...")
+similarities = cosine_similarity(all_negative_embeddings, campaign_center).flatten()
+
+easy_neg_indices = []
+hard_neg_indices = []
+
+for idx, sim in enumerate(similarities):
+    if sim < 0.2:
+        easy_neg_indices.append(idx)
+    elif 0.2 <= sim < 0.45:
+        hard_neg_indices.append(idx)
+
+# =========================================================================
+# 4. The Magic: Smart and balanced sampling (max 2x negatives relative to positives)
+# =========================================================================
+# Let's assume we want a 1:2 ratio. That means the total amount of negatives will be exactly double the positives.
+# We will split it half-and-half: part hard negatives (to challenge the model) and part easy ones (for background noise).
+max_negatives_per_type = num_positives  # Taking an equal amount of hard and easy ones
+
+# Actual sampling from the indices (taking the first ones, or randomly)
+selected_hard_idx = hard_neg_indices[:max_negatives_per_type]
+selected_easy_idx = easy_neg_indices[:max_negatives_per_type]
+final_neg_indices = selected_hard_idx + selected_easy_idx
+
+# Extracting the filtered and balanced texts and vectors
+sampled_negative_texts = [all_negative_texts[i] for i in final_neg_indices]
+sampled_negative_embeddings = all_negative_embeddings[final_neg_indices]
+
+print(f"Class balancing completed successfully:")
+print(f"   - Good examples (positives): {num_positives}")
+print(f"   - Bad examples (hard negatives): {len(selected_hard_idx)}")
+print(f"   - Bad examples (easy negatives): {len(selected_easy_idx)}")
+print(f"   - Total negative examples: {len(sampled_negative_texts)} (ratio of 1:{len(sampled_negative_texts)/num_positives:.1f})")
+
+# =========================================================================
+# 5. Merging arrays and splitting into Train/Test (exactly as your models expect)
+# =========================================================================
+X = np.vstack([positive_embeddings, sampled_negative_embeddings])
+y = np.array([1] * num_positives + [0] * len(sampled_negative_texts))
+all_texts = positive_texts + sampled_negative_texts
+
+indices = np.arange(len(X))
+train_idx, test_idx = train_test_split(indices, test_size=0.2, random_state=42, stratify=y)
+
+X_train = X[train_idx]
+X_test = X[test_idx]
+y_train = y[train_idx]
+y_test = y[test_idx]
+
+train_df = pd.DataFrame({'text': [all_texts[i] for i in train_idx], 'label': y_train})
+test_df = pd.DataFrame({'text': [all_texts[i] for i in test_idx], 'label': y_test})
+
+print(f"\nTraining arrays are ready for your models! Train size: {len(X_train)}, Test size: {len(X_test)}")
 
 
 
-
-
-####################### first model; logistic regression #######################
+# =========================================================================
+# Logistic Regression 
+# =========================================================================
 # training a logistic regression model on the training data
 logistic_model = LogisticRegression(max_iter=1000)
 result = logistic_model.fit(X_train, y_train)
